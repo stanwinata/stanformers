@@ -59,14 +59,45 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, : x.size(1)].requires_grad_(False)
         return self.dropout(x)
 
+class Embedding(nn.Module):
+    """
+    A NxD Learnable Lookup table/embedding, where N is size of vocabulary, and D is dimension.
+
+    Args:
+        vocab(int ~[1,+Inf]): size of vocabulary
+        d_model(int ~[1,+Inf]): embedding size/dimensionality.
+    """
+    def __init__(self, d_model, vocab):
+        super(Embedding, self).__init__()
+        self.lut_table = nn.Embedding(num_embeddings=vocab, embedding_dim=d_model)
+        self.d_model = d_model
+
+    def forward(self, x):
+        """
+        Given indices of words, return the corresponding learned embeddings vector.
+
+        Args:
+            x(tensor<ix32>): tensor of word indices to query.
+        """
+        return self.lut_table(x) * math.sqrt(self.d_model)
+
 class FFNetwork (nn.Module):
-    def __init__(self, d_model, d_ff, dropout):
+    def __init__(self, d_model, d_ff, dropout=0.1):
         """
         Initializes and defines the FFNetwork.
+        FFN(x) = max(0, xW1 + b1)W2 + b2 (2)
+
         Arguments:
             d_model(int~[1,+Inf]): Embedding size and dimensionality of input and output of attention layers.
                                    Also, input and output dimension for the FFNetwork in Transformers.
             d_ff(int~[1,+Inf]): Dimensionality of hidden layer/inner-layer
             droupout(float~[0,1)): Percentage/rate of neurons being dropped for regularization.
         """
-        self.linear
+        super(FFNetwork, self).__init__()
+        self.linear1 = nn.Linear(d_model, d_ff)
+        self.linear2 = nn.Linear(d_ff, d_model)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, x):
+        return self.linear2(self.dropout(self.relu(self.linear1(x))))
