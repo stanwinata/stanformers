@@ -11,7 +11,7 @@ def ReferenceAttention(query, key, value, mask=None, dropout=None):
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
     if mask is not None:
         scores = scores.masked_fill(mask == 0, -1e9)
-    p_attn = scores.softmax(dim=-1)
+    p_attn = scores.softmax(dim=1)
     if dropout is not None:
         p_attn = dropout(p_attn)
     return torch.matmul(p_attn, value), p_attn
@@ -151,9 +151,10 @@ def testPositionalEncoding():
     # plt.show()
 
 def testMultiHeadAttention():
+    # TODO: Check with mask and dropout+seed.
     d_model = 24
     num_head = 4
-    batch_size = 1
+    batch_size = 4
     Q = torch.randn([batch_size, d_model])
     K = torch.randn([batch_size, d_model])
     V = torch.randn([batch_size, d_model])
@@ -161,6 +162,9 @@ def testMultiHeadAttention():
     ref_MHA = ReferenceMultiHeadedAttention(num_head, d_model, dropout=0.0)
     torch.manual_seed(0)
     MHA = blocks.MultiHeadAttention(num_head, d_model, dropout=0.0)
+    assert(torch.equal(MHA.linear_Q.weight, ref_MHA.linears[0].weight))
+    assert(torch.equal(MHA.linear_K.weight, ref_MHA.linears[1].weight))
+    assert(torch.equal(MHA.linear_V.weight, ref_MHA.linears[2].weight))
     ref_y = ref_MHA.forward(Q, K, V)
     y = MHA.forward(Q, K, V)
     rtol = 0.0000001

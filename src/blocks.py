@@ -103,15 +103,23 @@ class FFNetwork (nn.Module):
         return self.linear2(self.dropout(self.relu(self.linear1(x))))
 
 def attention(query, key, value, mask=None, dropout=None):
+    """
+    query, key, value : tensor<batch x head x d_k>
+    Since each head is independent, we can let batch-prime = batch x head.
+    query, key, value : tensor<batch-prime x d_k>
+
+    then scaled_score = query * key_transpose : (batch-prime x 1 x d_k), (batch-prime x d_k x 1)
+    then attention_val = scaled_score * value : (batch-prime x 1), (batch-prime x d_k) -> (batch_prime x d_k)
+    """
     d_k = key.shape[-1]
-    scaled_scores = torch.matmul(query, key.transpose(-2, -1))/math.sqrt(d_k)
+    scaled_scores = torch.einsum('ijk,ikj->ij', query, key.transpose(-2, -1))/math.sqrt(d_k)
     # Ensure value of illegal connection not be used by setting weight to -Inf.
     if mask is not None:
         scaled_scores.masked_fill(mask == 0, 1e-9)
     scaled_weight = scaled_scores.softmax(dim=-1)
     if dropout is not None:
         scaled_weight = dropout(scaled_weight)
-    attention_val = torch.matmul(scaled_weight, value)
+    attention_val = torch.einsum('ij,ijk->ijk',scaled_weight, value)
     return attention_val
 
 def clones(module, N):
@@ -142,16 +150,15 @@ class MultiHeadAttention(nn.Module):
         nbatches = query.shape[0]
 
         # Split up the linear projections from d_model => h x d_k.
-        multi_head_query = proj_query.view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
-        multi_head_key = proj_key.view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
-        multi_head_value = proj_value.view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+        multi_head_query = proj_query.view(nbatches, self.h, self.d_k)
+        multi_head_key = proj_key.view(nbatches, self.h, self.d_k)
+        multi_head_value = proj_value.view(nbatches, self.h, self.d_k)
 
         # Apply attention to h x
         x = attention(multi_head_query, multi_head_key, multi_head_value, mask, self.dropout)
         # Concat attention
         x = (
-            x.transpose(1, 2)
-            .contiguous()
+            x.contiguous()
             .view(nbatches, -1, self.h * self.d_k)
         )
 
