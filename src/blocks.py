@@ -24,7 +24,7 @@ class PositionalEncoding(nn.Module):
         """
         Arguments:
             d_model(int~[1,+Inf]): Embedding size and dimensionality of input and output of attention layers.
-            droupout(float~[0,1)): Percentage/rate of neurons being dropped for regularization.
+            dropout(float~[0,1)): Percentage/rate of neurons being dropped for regularization.
             max_len(int~[1,+Inf]): Maximum length of input sequence.
         Returns:
             PE(tensor<seq_len x d_model x float>): Positional encodings of every position in sequence to be added to the embeddings.
@@ -91,7 +91,7 @@ class FFNetwork (nn.Module):
             d_model(int~[1,+Inf]): Embedding size and dimensionality of input and output of attention layers.
                                    Also, input and output dimension for the FFNetwork in Transformers.
             d_ff(int~[1,+Inf]): Dimensionality of hidden layer/inner-layer
-            droupout(float~[0,1)): Percentage/rate of neurons being dropped for regularization.
+            dropout(float~[0,1)): Percentage/rate of neurons being dropped for regularization.
         """
         super(FFNetwork, self).__init__()
         self.linear1 = nn.Linear(d_model, d_ff)
@@ -101,3 +101,59 @@ class FFNetwork (nn.Module):
 
     def forward(self, x):
         return self.linear2(self.dropout(self.relu(self.linear1(x))))
+
+def attention(query, key, value, mask=None, dropout=None):
+    d_k = key.shape[-1]
+    scaled_scores = torch.matmul(query, key.transpose(-2, -1))/math.sqrt(d_k)
+    # Ensure value of illegal connection not be used by setting weight to -Inf.
+    if mask is not None:
+        scaled_scores.masked_fill(mask == 0, 1e-9)
+    scaled_weight = scaled_scores.softmax(dim=-1)
+    if dropout is not None:
+        scaled_weight = dropout(scaled_weight)
+    attention_val = torch.matmul(scaled_weight, value)
+    return attention_val
+
+def clones(module, N):
+    "Produce N identical layers."
+    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, num_heads, d_model, dropout=0.1):
+        """
+        num_heads = number of heads/parallel attention layers.
+        d_model = model dimensionality.
+        """
+        super(MultiHeadAttention, self).__init__()
+        # Want to split model dimensionality by num heads
+        # s.t after concat, dim of multi-head attn ~= d_model.
+        self.h = num_heads
+        self.d_k = d_model // num_heads
+        self.linear_K, self.linear_Q, self.linear_V, self.linear_O = clones(nn.Linear(d_model, d_model), 4)
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, query, key, value, mask=None):
+        # Apply linear projections. In this implementation,
+        # we combine the h x d_k projections into a single linear layer
+        # and split it out lkater for better performance.
+        proj_query = self.linear_K(query)
+        proj_key = self.linear_Q(key)
+        proj_value = self.linear_V(value)
+        nbatches = query.shape[0]
+
+        # Split up the linear projections from d_model => h x d_k.
+        multi_head_query = proj_query.view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+        multi_head_key = proj_key.view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+        multi_head_value = proj_value.view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+
+        # Apply attention to h x
+        x = attention(multi_head_query, multi_head_key, multi_head_value, mask, self.dropout)
+        # Concat attention
+        x = (
+            x.transpose(1, 2)
+            .contiguous()
+            .view(nbatches, -1, self.h * self.d_k)
+        )
+
+        # Apply project to output.
+        return self.linear_O(x)
