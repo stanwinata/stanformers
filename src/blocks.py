@@ -104,20 +104,25 @@ class FFNetwork (nn.Module):
 
 def attention(query, key, value, mask=None, dropout=None):
     """
-    query, key, value : tensor<batch x head x d_k>
-    Since each head is independent, we can let batch-prime = batch x head.
-    query, key, value : tensor<batch-prime x d_k>
-    where batch is actually the length of sentence/number of words in sentence.
+    query, key, value : tensor<h x sent_len x d_K>
+    Query * Key_transpose -> scaled_score : tensor <h x sent_len x sent_len>
+    attention_val = scaled_score * value : (h x sent_len x sent_len), (h x sent_len x sent_len) -> (h x sent_len x d_k)
+    where h = number of heads
+    where sent_len = sentence length
+    where d_k = dimensionality in multiple head. (typically model_dimensionality / num_head)
 
-    then scaled_score = query * key_transpose : (batch-prime x 1 x d_k), (batch-prime x d_k x 1) -> (batch_prime x 1)
-    then attention_val = scaled_score * value : (batch-prime x 1), (batch-prime x d_k) -> (batch_prime x d_k)
+    Matrix with shape sent_len x sent_len represents
+    how each word affect others in the sentence.
+
+    We use multiple head on top of this to
+    learn different types of relationships between words.
     """
     num_head, batch, d_k = key.shape
     scaled_scores = torch.bmm(query, key.transpose(-2, -1))/math.sqrt(d_k)
     # Ensure value of illegal connection not be used by setting weight to -Inf.
     if mask is not None:
         scaled_scores.masked_fill(mask == 0, 1e-9)
-    scaled_weight = scaled_scores.softmax(dim=2)
+    scaled_weight = scaled_scores.softmax(dim=-1)
     if dropout is not None:
         scaled_weight = dropout(scaled_weight)
     attention_val = torch.bmm(scaled_weight, value)

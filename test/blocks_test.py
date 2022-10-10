@@ -154,10 +154,11 @@ def testMultiHeadAttention():
     # TODO: Check with mask and dropout+seed.
     d_model = 24
     num_head = 4
-    batch_size = 4
-    Q = torch.randn([batch_size, d_model])
-    K = torch.randn([batch_size, d_model])
-    V = torch.randn([batch_size, d_model])
+    batch_size = 3
+    sentence_length = 4
+    Q = torch.randn([sentence_length, d_model])
+    K = torch.randn([sentence_length, d_model])
+    V = torch.randn([sentence_length, d_model])
     torch.manual_seed(0)
     ref_MHA = ReferenceMultiHeadedAttention(num_head, d_model, dropout=0.0)
     torch.manual_seed(0)
