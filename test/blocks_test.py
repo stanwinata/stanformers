@@ -11,7 +11,7 @@ def ReferenceAttention(query, key, value, mask=None, dropout=None):
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
     if mask is not None:
         scores = scores.masked_fill(mask == 0, -1e9)
-    p_attn = scores.softmax(dim=1)
+    p_attn = scores.softmax(dim=-1)
     if dropout is not None:
         p_attn = dropout(p_attn)
     return torch.matmul(p_attn, value), p_attn
@@ -161,13 +161,29 @@ def testMultiHeadAttention():
     torch.manual_seed(0)
     ref_MHA = ReferenceMultiHeadedAttention(num_head, d_model, dropout=0.0)
     torch.manual_seed(0)
+    # TODO: push up issue against annotated transformers repo.
     MHA = blocks.MultiHeadAttention(num_head, d_model, dropout=0.0)
-    assert(torch.equal(MHA.linear_Q.weight, ref_MHA.linears[0].weight))
-    assert(torch.equal(MHA.linear_K.weight, ref_MHA.linears[1].weight))
-    assert(torch.equal(MHA.linear_V.weight, ref_MHA.linears[2].weight))
-    ref_y = ref_MHA.forward(Q, K, V)
+    torch.manual_seed(0)
+    torch_MHA = nn.MultiheadAttention(embed_dim=d_model, num_heads=num_head)
+    random_weight_float = 12.345
+    with torch.no_grad():
+        torch_MHA.in_proj_weight.fill_(random_weight_float)
+        torch_MHA.out_proj.weight.fill_(random_weight_float)
+        MHA.linear_Q.weight.fill_(random_weight_float)
+        MHA.linear_K.weight.fill_(random_weight_float)
+        MHA.linear_V.weight.fill_(random_weight_float)
+        MHA.linear_O.weight.fill_(random_weight_float)
+
+        torch_MHA.in_proj_bias.fill_(random_weight_float)
+        torch_MHA.out_proj.bias.fill_(random_weight_float)
+        MHA.linear_Q.bias.fill_(random_weight_float)
+        MHA.linear_K.bias.fill_(random_weight_float)
+        MHA.linear_V.bias.fill_(random_weight_float)
+        MHA.linear_O.bias.fill_(random_weight_float)
+    ref_y, _ = torch_MHA.forward(Q, K, V)
     y = MHA.forward(Q, K, V)
-    rtol = 0.0000001
+    y = y.squeeze()
+    rtol = 0.0001
     max_delta = torch.max(torch.abs(y-ref_y))
     assert(rtol > max_delta)
     print("PASSED: Multi Head Attention")

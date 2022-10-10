@@ -107,19 +107,22 @@ def attention(query, key, value, mask=None, dropout=None):
     query, key, value : tensor<batch x head x d_k>
     Since each head is independent, we can let batch-prime = batch x head.
     query, key, value : tensor<batch-prime x d_k>
+    where batch is actually the length of sentence/number of words in sentence.
 
-    then scaled_score = query * key_transpose : (batch-prime x 1 x d_k), (batch-prime x d_k x 1)
+    then scaled_score = query * key_transpose : (batch-prime x 1 x d_k), (batch-prime x d_k x 1) -> (batch_prime x 1)
     then attention_val = scaled_score * value : (batch-prime x 1), (batch-prime x d_k) -> (batch_prime x d_k)
     """
-    d_k = key.shape[-1]
-    scaled_scores = torch.einsum('ijk,ikj->ij', query, key.transpose(-2, -1))/math.sqrt(d_k)
+    num_head, batch, d_k = key.shape
+    scaled_scores = torch.bmm(query, key.transpose(-2, -1))/math.sqrt(d_k)
     # Ensure value of illegal connection not be used by setting weight to -Inf.
     if mask is not None:
         scaled_scores.masked_fill(mask == 0, 1e-9)
-    scaled_weight = scaled_scores.softmax(dim=-1)
+    scaled_weight = scaled_scores.softmax(dim=2)
     if dropout is not None:
         scaled_weight = dropout(scaled_weight)
-    attention_val = torch.einsum('ij,ijk->ijk',scaled_weight, value)
+    attention_val = torch.bmm(scaled_weight, value)
+    # Concatenating multiple heads into one.
+    attention_val = attention_val.transpose(0,1).reshape(batch, num_head * d_k)
     return attention_val
 
 def clones(module, N):
@@ -149,10 +152,12 @@ class MultiHeadAttention(nn.Module):
         proj_value = self.linear_V(value)
         nbatches = query.shape[0]
 
-        # Split up the linear projections from d_model => h x d_k.
-        multi_head_query = proj_query.view(nbatches, self.h, self.d_k)
-        multi_head_key = proj_key.view(nbatches, self.h, self.d_k)
-        multi_head_value = proj_value.view(nbatches, self.h, self.d_k)
+        # Split up the linear projections from sentence_len x d_model
+        # => sentence_len x (h x d_k).
+        # => h x sentence_len x d_k. for easy computation
+        multi_head_query = proj_query.view(nbatches, self.h, self.d_k).transpose(0,1)
+        multi_head_key = proj_key.view(nbatches, self.h, self.d_k).transpose(0,1)
+        multi_head_value = proj_value.view(nbatches, self.h, self.d_k).transpose(0,1)
 
         # Apply attention to h x
         x = attention(multi_head_query, multi_head_key, multi_head_value, mask, self.dropout)
