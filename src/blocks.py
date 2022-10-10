@@ -6,6 +6,14 @@ import math, copy, time
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
 
+"""
+ =========== TODO LIST ===========
+ 1.Sublayer Connection.
+ 2.Encoder-Decoder Layer.
+ 3.Encoder-Decoder stack.
+ 4.Add sample training loop.
+ 5.Add custom task training.
+"""
 class PositionalEncoding(nn.Module):
     """
     Encoding position of inputs/sequence using sine and cosine.
